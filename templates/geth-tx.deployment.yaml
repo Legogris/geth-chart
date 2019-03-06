@@ -1,0 +1,133 @@
+apiVersion: apps/v1beta2 
+kind: StatefulSet
+metadata:
+  name: {{ template "ethereum.fullname" . }}-geth-tx
+  labels:
+    app: {{ template "ethereum.name" . }}
+    chart: {{ template "ethereum.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+    component: geth-tx
+spec:
+  replicas: {{ .Values.geth.tx.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "ethereum.name" . }}
+      release: {{ .Release.Name }}
+      component: geth-tx
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    annotations:
+      volume.beta.kubernetes.io/storage-class: fast
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: fast
+      resources:
+        requests:
+          storage: 40Gi
+  template:
+    metadata:
+      labels:
+        app: {{ template "ethereum.name" . }}
+        release: {{ .Release.Name }}
+        component: geth-tx
+    spec:
+      containers:
+      - name: geth-tx
+        image: {{ .Values.geth.image.repository }}:{{ .Values.geth.image.tag }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        resources:
+          limits:
+            cpu: {{ .Values.geth.tx.limits.cpu }}
+            memory: {{ .Values.geth.tx.limits.memory }}
+          requests:
+            cpu: {{ .Values.geth.tx.requests.cpu }}
+            memory: {{ .Values.geth.tx.requests.memory }}
+        command: ["/bin/sh"]
+        args: 
+        - "-c"
+        - "geth --cache 512 --trie-cache-gens 10 --syncmode 'fast' --bootnodes={{ .Values.geth.bootnodes }}  --rpc --rpcaddr 0.0.0.0 --rpcapi={{ .Values.geth.tx.args.rpcapi }} --rpccorsdomain='*' --ws --networkid=${NETWORK_ID} --ethstats=${HOSTNAME}:${ETHSTATS_SECRET}@${ETHSTATS_SVC} --verbosity=4"
+        env:
+        - name: ETHSTATS_SVC
+          value: {{ template "ethereum.fullname" . }}-ethstats.{{ .Release.Namespace }}
+        - name: ETHSTATS_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "ethereum.fullname" . }}-ethstats
+              key: WS_SECRET
+        - name: NETWORK_ID
+          valueFrom:
+            configMapKeyRef:
+              name: {{ template "ethereum.fullname" . }}-geth-config
+              key: networkid
+        ports:
+        - name: rpc
+          containerPort: 8545
+        - name: ws
+          containerPort: 8546
+        - name: discovery-udp
+          containerPort: 30303
+          protocol: UDP
+        - name: discovery-tcp
+          containerPort: 30303
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: config
+          mountPath: /var/geth
+      initContainers:
+      - name: init-genesis
+        image: {{ .Values.geth.image.repository }}:{{ .Values.geth.image.tag }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        args:
+        - "init"
+        - "/var/geth/genesis.json"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: config
+          mountPath: /var/geth
+      - name: import-geth-account
+        image: {{ .Values.geth.image.repository }}:{{ .Values.geth.image.tag }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - "if [ $(geth account list | wc -l) = '0' ]; then geth account import --password /root/.ethereum/account/accountSecret /root/.ethereum/account/accountPrivateKey; fi"
+        volumeMounts:
+        - name: data
+          mountPath: /root/.ethereum
+        - name: account
+          readOnly: true
+          mountPath: /root/.ethereum/account
+      {{ if eq .Values.geth.bootnodes "`cat /root/.ethereum/bootnodes`"  }}
+      - name: get-bootnodes
+        image: {{ .Values.geth.image.repository }}:{{ .Values.geth.image.tag }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
+        command: ["/bin/sh"]
+        args:
+        - "-c"
+        - |-
+{{ .Files.Get "scripts/get-bootnode.sh" | indent 10 }}
+        env:
+        - name: BOOTNODE_SVC
+          value: {{ template "ethereum.fullname" . }}-bootnode.{{ .Release.Namespace }}
+        volumeMounts:
+        - name: data
+          mountPath: /geth
+      {{ end }}
+      volumes:
+      # - name: data
+      #   persistentVolumeClaim:
+      #     claimName: {{ template "ethereum.fullname" . }}-geth-tx-data-pvc
+      - name: config 
+        configMap:
+          name: {{ template "ethereum.fullname" . }}-geth-config
+      - name: account
+        secret:
+          secretName: {{ template "ethereum.fullname" . }}-geth-account
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}

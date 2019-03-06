@@ -1,0 +1,65 @@
+# Default values for ethereum.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+imagePullPolicy: IfNotPresent
+
+# Node labels for pod assignment
+# ref: https://kubernetes.io/docs/user-guide/node-selection/
+nodeSelector:
+  cloud.google.com/gke-local-ssd: "true"
+
+bootnode:
+  replicaCount: 0
+  image:
+    repository: ethereum/client-go
+    tag: alltools-v1.8.23
+
+ethstats:
+  image:
+    repository: ethereumex/eth-stats-dashboard
+    tag: v0.0.1
+  webSocketSecret: my-secret-for-connecting-to-ethstats
+  service:
+    type: LoadBalancer
+  limits:
+    memory: '400Mi'
+  requests:
+    memory: '256Mi'
+    cpu: '80m'
+
+geth:
+  bootnodes: "`cat /root/.ethereum/bootnodes`"
+  # bootnodes: "enode://a24ac7c5484ef4ed0c5eb2d36620ba4e4aa13b8c84684e1b4aab0cebea2ae45cb4d375b77eab56516d34bfbd3c1a833fc51296ff084b770b94fb9028c4d25ccf@52.169.42.101:30303,enode://343149e4feefa15d882d9fe4ac7d88f885bd05ebb735e547f12e12080a9fa07c8014ca6fd7f373123488102fe5e34111f8509cf0b7de3f5b44339c9f25e87cb8@52.3.158.184:30303,enode://b6b28890b006743680c52e64e0d16db57f28124885595fa03a562be1d2bf0f3a1da297d56b13da25fb992888fd556d4c1a27b1f39d531bde7de1921c90061cc6@159.89.28.211:30303"
+  image:
+    repository: ethereum/client-go
+    tag: v1.8.23
+  tx:
+    # transaction nodes
+    replicaCount: 0
+    service:
+      type: ClusterIP
+    args:
+      rpcapi: 'eth,net,web3'
+    limits:
+      cpu: '100m'
+      memory: '1.5Gi'
+    requests:
+      cpu: '100m'
+      memory: '1Gi'
+  miner:
+    # miner nodes
+    replicaCount: 3
+  genesis:
+    # geth genesis block
+    difficulty: '0x0400'
+    gasLimit: '0x8000000'
+    networkId: 4
+  account:
+    # You will need to configure an Ethereum account before this
+    # network will run. The Ethereum account will be used to seed
+    # Ether and mined Ether will be deposited into this account.
+    # ref: https://github.com/ethereum/go-ethereum/wiki/Managing-your-accounts
+    address:
+    privateKey:
+    secret:
